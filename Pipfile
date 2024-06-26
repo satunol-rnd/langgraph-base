@@ -10,6 +10,7 @@ langchain-openai = "*"
 tavily-python = "*"
 python-dotenv = "*"
 langchain-community = "*"
+langchain-mistralai = "*"
 
 [dev-packages]
 

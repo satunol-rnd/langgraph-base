@@ -3,6 +3,14 @@ load_dotenv()
 
 
 """
+# Human-in-the-loop
+In this example we will build a ReAct Agent that has a human in the loop. We will use the human to approve 
+specific actions. This examples builds off the base chat executor. It is highly recommended you learn about that 
+executor before going through this notebook. You can find documentation for that example here(https://github.com/
+langchain-ai/langgraph/blob/66b728e83a0661d1ca8f47fad97ef53d3a5f717d/examples/chat_agent_executor_with_function_calling/base.ipynb. 
+Any modifications of that example are called below with MODIFICATION, so if you are looking for the differences 
+you can just search for that.
+
 # Set up the tools
 We will first define the tools we want to use. For this simple example, we will use create a placeholder search engine. 
 However, it is really easy to create your own tools - see documentation here(https://python.langchain.com/v0.2/docs/how_to/custom_tools) 
@@ -85,6 +93,7 @@ def should_continue(state):
     else:
         return "continue"
 
+
 # Define the function that calls the model
 def call_model(state):
     messages = state["messages"]
@@ -98,26 +107,43 @@ def call_tool(state):
     # Based on the continue condition
     # we know the last message involves a function call
     last_message = messages[-1]
-    # We construct an ToolInvocation from the function_call
-    tool_call = last_message.tool_calls[0]
+    # We construct an ToolInvocation for each tool call
+    tool_invocations = []
+    for tool_call in last_message.tool_calls:
+        action = ToolInvocation(
+            tool=tool_call["name"],
+            tool_input=tool_call["args"],
+        )
+        tool_invocations.append(action)
+
     action = ToolInvocation(
         tool=tool_call["name"],
         tool_input=tool_call["args"],
     )
     # We call the tool_executor and get back a response
-    response = tool_executor.invoke(action)
-    # We use the response to create a FunctionMessage
-    function_message = ToolMessage(
-        content=str(response), name=action.tool, tool_call_id=tool_call["id"]
-    )
-    # We return a list, because this will get added to the existing list
-    return {"messages": [function_message]}
+    responses = tool_executor.batch(tool_invocations, return_exceptions=True)
+    # We use the response to create tool messages
+    tool_messages = [
+        ToolMessage(
+            content=str(response),
+            name=tc["name"],
+            tool_call_id=tc["id"],
+        )
+        for tc, response in zip(last_message.tool_calls, responses)
+    ]
 
+    # We return a list, because this will get added to the existing list
+    return {"messages": tool_messages}
 
 """
 # Define the graph
 We can now put it all together and define the graph!
+## MODIFICATION
+We modify the graph to interrupt before calling the tools. This lets the user give approval to continue. 
+Note that this is a simple example and we could modify it to change the tool input, use some other channel 
+besides input, etc.
 """
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
 # Define a new graph
@@ -159,8 +185,7 @@ workflow.add_edge("action", "agent")
 # Finally, we compile it!
 # This compiles it into a LangChain Runnable,
 # meaning you can use it as you would any other runnable
-app = workflow.compile()
-
+app = workflow.compile(checkpointer=MemorySaver(), interrupt_before=["action"])
 
 """
 # Use it!
@@ -168,12 +193,23 @@ We can now use it! This now exposes the same interface as all other LangChain ru
 """
 from langchain_core.messages import HumanMessage
 
-inputs = {"messages": [HumanMessage(content="what is the weather in cimahi?")]}
-# app.invoke(inputs)
-for output in app.stream(inputs):
-    # stream() yields dictionaries with output keyed by node name
-    for key, value in output.items():
-        print(f"Output from node '{key}':")
-        print("---")
-        print(value)
-    print("\n---\n")
+inputs = {"messages": [HumanMessage(content="what is the weather in Cimahi?")]}
+config = {"configurable": {"thread_id": "thread-1"}}
+while True:
+    for output in app.stream(inputs, config):
+        # stream() yields dictionaries with output keyed by node name
+        for key, value in output.items():
+            print(f"Output from node '{key}':")
+            print("---")
+            print(value)
+        print("\n---\n")
+    snapshot = app.get_state(config)
+    # If "next" is present, it means we've interrupted mid-execution
+    if not snapshot.next:
+        break
+    inputs = None
+    response = input(
+        "Do you approve the next step? Type y if you do, anything else to stop: "
+    )
+    if response != "y":
+        break
