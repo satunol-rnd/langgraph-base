@@ -11,6 +11,9 @@ tavily-python = "*"
 python-dotenv = "*"
 langchain-community = "*"
 langchain-mistralai = "*"
+pandas = "*"
+langchain-experimental = "*"
+matplotlib = "*"
 
 [dev-packages]
 

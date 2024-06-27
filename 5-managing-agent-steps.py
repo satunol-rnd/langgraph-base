@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-# complete tutorial : https://github.com/langchain-ai/langgraph/blob/main/examples/chat_agent_executor_with_function_calling/respond-in-format.ipynb
+# complete tutorial : https://github.com/langchain-ai/langgraph/blob/main/examples/chat_agent_executor_with_function_calling/managing-agent-steps.ipynb
 
 from langchain_community.tools.tavily_search import TavilySearchResults
 
@@ -66,7 +66,7 @@ def should_continue(state) -> Literal["continue", "end"]:
 
 # Define the function that calls the model
 def call_model(state):
-    messages = state["messages"]
+    messages = state["messages"][-5:]  # Modification: only use last 5 messages
     response = model.invoke(messages)
     # We return a list, because this will get added to the existing list
     return {"messages": [response]}

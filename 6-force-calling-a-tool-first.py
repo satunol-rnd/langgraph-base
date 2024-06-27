@@ -1,68 +1,48 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-# complete tutorial : https://github.com/langchain-ai/langgraph/blob/main/examples/chat_agent_executor_with_function_calling/respond-in-format.ipynb
+# complete tutorial : https://github.com/langchain-ai/langgraph/blob/main/examples/chat_agent_executor_with_function_calling/force-calling-a-tool-first.ipynb
 
 from langchain_community.tools.tavily_search import TavilySearchResults
 
 tools = [TavilySearchResults(max_results=1)]
 
+
 from langgraph.prebuilt import ToolExecutor
 
 tool_executor = ToolExecutor(tools)
 
+
 from langchain_openai import ChatOpenAI
-# from langchain_mistralai import ChatMistralAI
 
-# # We will set streaming=True so that we can stream tokens
-# # See the streaming section for more information on this.
+# We will set streaming=True so that we can stream tokens
+# See the streaming section for more information on this.
 model = ChatOpenAI(temperature=0, streaming=True)
-# model = ChatMistralAI(temperature=0, streaming=True)
 
-
-from langchain_core.pydantic_v1 import BaseModel, Field
-
-class Response(BaseModel):
-    """Final response to the user"""
-
-    temperature: float = Field(description="the temperature")
-    unit: str = Field(description="the unit of the temperature")
-    other_notes: str = Field(description="any other notes about the weather")
-
-
-model = model.bind_tools(tools + [Response])
+model = model.bind_tools(tools)
 
 
 import operator
 from typing import Annotated, Sequence, TypedDict
-
 from langchain_core.messages import BaseMessage
-
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
 
 
-from typing import Literal
-
 from langchain_core.messages import ToolMessage
-
 from langgraph.prebuilt import ToolInvocation
 
-
 # Define the function that determines whether to continue or not
-def should_continue(state) -> Literal["continue", "end"]:
+def should_continue(state):
     messages = state["messages"]
     last_message = messages[-1]
     # If there is no function call, then we finish
     if not last_message.tool_calls:
         return "end"
-    # Otherwise if there is, we need to check what type of function call it is
-    if last_message.tool_calls[0]["name"] == "Response":
-        return "end"
-    # Otherwise we continue
-    return "continue"
-
+    # Otherwise if there is, we continue
+    else:
+        return "continue"
 
 # Define the function that calls the model
 def call_model(state):
@@ -71,40 +51,55 @@ def call_model(state):
     # We return a list, because this will get added to the existing list
     return {"messages": [response]}
 
-
 # Define the function to execute tools
 def call_tool(state):
     messages = state["messages"]
     # Based on the continue condition
     # we know the last message involves a function call
     last_message = messages[-1]
-    # We construct an ToolInvocation for each tool call
-    tool_invocations = []
-    for tool_call in last_message.tool_calls:
-        action = ToolInvocation(
-            tool=tool_call["name"],
-            tool_input=tool_call["args"],
-        )
-        tool_invocations.append(action)
-
+    # We construct an ToolInvocation from the function_call
+    tool_call = last_message.tool_calls[0]
     action = ToolInvocation(
         tool=tool_call["name"],
         tool_input=tool_call["args"],
     )
     # We call the tool_executor and get back a response
-    responses = tool_executor.batch(tool_invocations, return_exceptions=True)
-    # We use the response to create tool messages
-    tool_messages = [
-        ToolMessage(
-            content=str(response),
-            name=tc["name"],
-            tool_call_id=tc["id"],
-        )
-        for tc, response in zip(last_message.tool_calls, responses)
-    ]
-
+    response = tool_executor.invoke(action)
+    # We use the response to create a FunctionMessage
+    function_message = ToolMessage(
+        content=str(response), name=action.tool, tool_call_id=tool_call["id"]
+    )
     # We return a list, because this will get added to the existing list
-    return {"messages": tool_messages}
+    return {"messages": [function_message]}
+
+
+"""
+## MODIFICATION
+Here we create a node that returns an AIMessage with a tool call 
+- we will use this at the start to force it call a tool
+"""
+# This is the new first - the first call of the model we want to explicitly hard-code some action
+from langchain_core.messages import AIMessage
+
+
+def first_model(state: AgentState):
+    human_input = state["messages"][-1].content
+    return {
+        "messages": [
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "tavily_search_results_json",
+                        "args": {
+                            "query": human_input,
+                        },
+                        "id": "tool_abcd123",
+                    }
+                ],
+            )
+        ]
+    }
 
 
 from langgraph.graph import END, StateGraph
@@ -112,13 +107,16 @@ from langgraph.graph import END, StateGraph
 # Define a new graph
 workflow = StateGraph(AgentState)
 
+# Modification - Define the new entrypoint
+workflow.add_node("first_agent", first_model)
+
 # Define the two nodes we will cycle between
 workflow.add_node("agent", call_model)
 workflow.add_node("action", call_tool)
 
 # Set the entrypoint as `agent`
 # This means that this node is the first one called
-workflow.set_entry_point("agent")
+workflow.set_entry_point("first_agent") # Modification - we now use `first_agent`
 
 # We now add a conditional edge
 workflow.add_conditional_edges(
@@ -145,6 +143,9 @@ workflow.add_conditional_edges(
 # This means that after `tools` is called, `agent` node is called next.
 workflow.add_edge("action", "agent")
 
+# Modification - After we call the first agent, we know we want to go to action
+workflow.add_edge("first_agent", "action")
+
 # Finally, we compile it!
 # This compiles it into a LangChain Runnable,
 # meaning you can use it as you would any other runnable
@@ -153,11 +154,15 @@ app = workflow.compile()
 
 from langchain_core.messages import HumanMessage
 
-inputs = {"messages": [HumanMessage(content="what is the weather in Bandung")]}
+# inputs = {"messages": [HumanMessage(content="what is the weather in cimahi?")]}
+# inputs = {"messages": [HumanMessage(content="who is Joko Widodo?")]}
+inputs = {"messages": [HumanMessage(content="tell me about the weather in Denpasar?")]}
+
+# app.invoke(inputs)
 for output in app.stream(inputs):
     # stream() yields dictionaries with output keyed by node name
     for key, value in output.items():
         print(f"Output from node '{key}':")
         print("---")
-        print(value["messages"][-1])
+        print(value)
     print("\n---\n")
