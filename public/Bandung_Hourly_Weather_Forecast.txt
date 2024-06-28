@@ -1,0 +1,25 @@
+Today's Bandung Hourly Weather Forecast:
+- 14:00: Passing showers, cloudy, 28°C, feels like 31°C, wind speed 7 km/h, humidity 68%
+- 15:00: A few thunderstorms, broken clouds, 28°C, feels like 30°C, wind speed 6 km/h, humidity 73%
+- 16:00: A few thunderstorms, partly cloudy, 26°C, feels like 28°C, wind speed 5 km/h, humidity 80%
+- 17:00: Light showers, partly cloudy, 26°C, feels like 27°C, wind speed 3 km/h, humidity 81%
+- 18:00: Light showers, broken clouds, 24°C, feels like 25°C, wind speed 2 km/h, humidity 86%
+- 19:00: Light showers, broken clouds, 24°C, feels like 23°C, wind speed 1 km/h, humidity 90%
+- 20:00: A few showers, partly cloudy, 23°C, feels like 21°C, wind speed 1 km/h, humidity 93%
+- 21:00: A few showers, scattered clouds, 22°C, feels like 20°C, wind speed 2 km/h, humidity 94%
+- 22:00: A few showers, scattered clouds, 22°C, feels like 20°C, wind speed 3 km/h, humidity 94%
+- 23:00: A few showers, partly cloudy, 22°C, feels like 20°C, wind speed 3 km/h, humidity 94%
+- 00:00: A few showers, partly cloudy, 22°C, feels like 20°C, wind speed 3 km/h, humidity 94%
+- 01:00: Light showers, partly cloudy, 22°C, feels like 19°C, wind speed 3 km/h, humidity 95%
+- 02:00: Light showers, broken clouds, 22°C, feels like 19°C, wind speed 4 km/h, humidity 95%
+- 03:00: Light showers, cloudy, 22°C, feels like 19°C, wind speed 4 km/h, humidity 94%
+- 04:00: Light showers, overcast, 21°C, feels like 19°C, wind speed 5 km/h, humidity 94%
+- 05:00: Light showers, overcast, 21°C, feels like 18°C, wind speed 5 km/h, humidity 94%
+- 06:00: A few showers, overcast, 21°C, feels like 21°C, wind speed 4 km/h, humidity 94%
+- 07:00: Passing showers, overcast, 21°C, feels like 21°C, wind speed 4 km/h, humidity 93%
+- 08:00: Passing showers, mostly cloudy, 23°C, feels like 22°C, wind speed 3 km/h, humidity 85%
+- 09:00: Mostly sunny, 25°C, feels like 26°C, wind speed 3 km/h, humidity 77%
+- 10:00: Mostly sunny, 27°C, feels like 28°C, wind speed 4 km/h, humidity 72%
+- 11:00: Scattered clouds, 28°C, feels like 30°C, wind speed 5 km/h, humidity 70%
+- 12:00: Isolated thunderstorms, partly cloudy, 28°C, feels like 30°C, wind speed 6 km/h, humidity 69%
+- 13:00: Isolated thunderstorms, broken clouds, 28°C, feels like 31°C, wind speed 8 km/h, humidity 69%
