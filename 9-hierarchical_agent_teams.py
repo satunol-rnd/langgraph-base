@@ -47,7 +47,7 @@ def read_document(
         lines = file.readlines()
     if start is not None:
         start = 0
-    return "\n".join(lines[start:end])
+    return "".join(lines[start:end])
 
 
 @tool
@@ -121,9 +121,9 @@ def create_agent(
 ) -> str:
     """Create a function-calling agent and add it to the graph."""
     system_prompt += "\nWork autonomously according to your specialty, using the tools available to you."
-    " Do not ask for clarification."
     " Your other team members (and other teams) will collaborate with you with their own specialties."
-    " You are chosen for a reason! You are one of the following team members: {team_members}."
+    " If you can't find appropriate tools, just work what you can. "
+    " You are one of the following team members: {team_members}."
     prompt = ChatPromptTemplate.from_messages(
         [
             (
@@ -298,9 +298,9 @@ llm = ChatOpenAIModel(model="gpt-3.5-turbo")
 
 doc_writer_agent = create_agent(
     llm,
-    [write_document, edit_document, read_document],
-    "You are an expert writing a document.\n"
-    # The {current_files} value is populated automatically by the graph state
+    [write_document, edit_document, read_document, chart_maker],
+    "You are an expert writing a document. You may format document into csv data."
+    " You may code a python script to create chart image.\n"
     "Below are files currently in your directory:\n{current_files}",
 )
 # Injects current directory working state before each call
@@ -385,7 +385,7 @@ supervisor_node = create_team_supervisor(
     " respond with the worker to act next. Each worker will perform a"
     " task and respond with their results and status. When finished,"
     " respond with FINISH.",
-    ["ResearchTeam", "PaperWritingTeam"],
+    ["ResearchTeam", "DataWritingTeam"],
 )
 
 # Top-level graph state
@@ -407,19 +407,19 @@ super_graph = StateGraph(State)
 # First add the nodes, which will do the work
 super_graph.add_node("ResearchTeam", get_last_message | research_chain | join_graph)
 super_graph.add_node(
-    "PaperWritingTeam", get_last_message | authoring_chain | join_graph
+    "DataWritingTeam", get_last_message | authoring_chain | join_graph
 )
 super_graph.add_node("supervisor", supervisor_node)
 
 # Define the graph connections, which controls how the logic
 # propagates through the program
 super_graph.add_edge("ResearchTeam", "supervisor")
-super_graph.add_edge("PaperWritingTeam", "supervisor")
+super_graph.add_edge("DataWritingTeam", "supervisor")
 super_graph.add_conditional_edges(
     "supervisor",
     lambda x: x["next"],
     {
-        "PaperWritingTeam": "PaperWritingTeam",
+        "DataWritingTeam": "DataWritingTeam",
         "ResearchTeam": "ResearchTeam",
         "FINISH": END,
     },
@@ -455,7 +455,7 @@ super_graph = super_graph.compile()
 #         "messages": [
 #             HumanMessage(
 #                 content="Create summary about Singapure GDP in last 5 years. "
-#                 "When you done, tell PaperWritingTeam to create csv file from year and GDP data into disk."
+#                 "When you done, tell DataWritingTeam to create csv file from year and GDP data into disk."
 #                 "Make sure the csv file is saved and exist in current directory. Then generate chart from it."
 #             )
 #         ],
@@ -466,18 +466,33 @@ super_graph = super_graph.compile()
 #         print(s)
 #         print("---")
 
-country = "Indonesia"
+# country = "Indonesia"
+# for s in super_graph.stream(
+#     {
+#         "messages": [
+#             HumanMessage(
+#                 content=f"Create paper about {country} GDP in last 5 years. "
+#                 f"save to disk with filename: {country}_gdp.txt."
+#             )
+#         ],
+#     },
+#     {"recursion_limit": 20},
+# ):
+#     if "__end__" not in s:
+#         print(s)
+#         print("---")
+
+city = "Bandung"
 for s in super_graph.stream(
     {
         "messages": [
             HumanMessage(
-                content=f"Create summary about {country} GDP in last 5 years. "
-                "From that summary we need year and GDP data in csv format. "
-                f"Then write document of that csv as '{country}GDP.csv'."
+                content=f"Write document of today hourly weather in {city}. "
+                f"Save it to disk with filename: {city}_weather.txt."
             )
         ],
     },
-    {"recursion_limit": 20},
+    {"recursion_limit": 30},
 ):
     if "__end__" not in s:
         print(s)
