@@ -2,12 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 """
-Corrective RAG (CRAG)
-
-Corrective-RAG (CRAG) is a strategy for RAG that incorporates 
-self-reflection / self-grading on retrieved documents.
-
-more at : https://github.com/langchain-ai/langgraph/blob/main/examples/rag/langgraph_crag.ipynb
+more at : https://github.com/langchain-ai/langgraph/blob/main/examples/rag/langgraph_self_rag.ipynb
 """
 
 from pathlib import Path
@@ -62,6 +57,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_openai import ChatOpenAI
 
+
 # Data model
 class GradeDocuments(BaseModel):
     """Binary score for relevance check on retrieved documents."""
@@ -70,33 +66,6 @@ class GradeDocuments(BaseModel):
         description="Documents are relevant to the question, 'yes' or 'no'"
     )
 
-### Chat Grader
-class GradeChat(BaseModel):
-    """Binary score for determine whether to retrieve documents based on the relevance of question."""
-
-    binary_score: str = Field(
-        description="Question needs to retrieve documents, 'yes' or 'no'"
-    )
-    answer: str = Field(description="Answer to the question if you respond binary_score id 'no'")
-
-llm = ChatOpenAI(model="gpt-3.5-turbo-0125", temperature=0)
-structured_llm_chat_grader = llm.with_structured_output(GradeChat)
-
-# Prompt
-system = """You are a friendly AI assistant that help human to answer questions. 
-You may evaluates whether the input chat message needs to retrieve documents or not. \n"""
-chat_grade_prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", system),
-        ("human", "{question}"),
-    ]
-)
-
-chat_grader = chat_grade_prompt | structured_llm_chat_grader
-# question = "hello"
-# question = "kesehatan mental"
-# print(chat_grader.invoke({"question": question}))
-
 
 # LLM with function call
 llm = ChatOpenAI(model="gpt-3.5-turbo-0125", temperature=0)
@@ -104,7 +73,8 @@ structured_llm_grader = llm.with_structured_output(GradeDocuments)
 
 # Prompt
 system = """You are a grader assessing relevance of a retrieved document to a user question. \n 
-    If the document contains keyword(s) or semantic meaning related to the question, grade it as relevant. \n
+    It does not need to be a stringent test. The goal is to filter out erroneous retrievals. \n
+    If the document contains keyword(s) or semantic meaning related to the user question, grade it as relevant. \n
     Give a binary score 'yes' or 'no' score to indicate whether the document is relevant to the question."""
 grade_prompt = ChatPromptTemplate.from_messages(
     [
@@ -114,7 +84,7 @@ grade_prompt = ChatPromptTemplate.from_messages(
 )
 
 retrieval_grader = grade_prompt | structured_llm_grader
-# question = "kesehatan mental"
+# question = "PTSD"
 # docs = retriever.invoke(question)
 # doc_txt = docs[1].page_content
 # print(retrieval_grader.invoke({"question": question, "document": doc_txt}))
@@ -124,7 +94,8 @@ from langchain import hub
 from langchain_core.output_parsers import StrOutputParser
 
 # Prompt
-prompttemplate = """You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise.
+prompttemplate = """You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. 
+If you don't know the answer, just say that you don't know. Use less than 300 words and keep the answer concise.
 Question: {question} 
 Context: {context} 
 Answer:
@@ -134,7 +105,6 @@ prompt = ChatPromptTemplate.from_template(template=prompttemplate)
 # LLM
 llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0)
 
-
 # Post-processing
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
@@ -143,18 +113,71 @@ def format_docs(docs):
 # Chain
 rag_chain = prompt | llm | StrOutputParser()
 
-# Run
+# # Run
 # generation = rag_chain.invoke({"context": docs, "question": question})
 # print(generation)
 
-### Question Re-writer
+### Hallucination Grader
+# Data model
+class GradeHallucinations(BaseModel):
+    """Binary score for hallucination present in generation answer."""
 
+    binary_score: str = Field(
+        description="Answer is grounded in the facts, 'yes' or 'no'"
+    )
+
+
+# LLM with function call
+llm = ChatOpenAI(model="gpt-3.5-turbo-0125", temperature=0)
+structured_llm_grader = llm.with_structured_output(GradeHallucinations)
+
+# Prompt
+system = """You are a grader assessing whether an LLM generation is grounded in / supported by a set of retrieved facts. \n 
+    Give a binary score 'yes' or 'no'. 'Yes' means that the answer is grounded in / supported by the set of facts."""
+hallucination_prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", system),
+        ("human", "Set of facts: \n\n {documents} \n\n LLM generation: {generation}"),
+    ]
+)
+
+hallucination_grader = hallucination_prompt | structured_llm_grader
+# hallucination_grader.invoke({"documents": docs, "generation": generation})
+
+### Answer Grader
+# Data model
+class GradeAnswer(BaseModel):
+    """Binary score to assess answer addresses question."""
+
+    binary_score: str = Field(
+        description="Answer addresses the question, 'yes' or 'no'"
+    )
+
+
+# LLM with function call
+llm = ChatOpenAI(model="gpt-3.5-turbo-0125", temperature=0)
+structured_llm_grader = llm.with_structured_output(GradeAnswer)
+
+# Prompt
+system = """You are a grader assessing whether an answer addresses / resolves a question \n 
+     Give a binary score 'yes' or 'no'. Yes' means that the answer resolves the question."""
+answer_prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", system),
+        ("human", "User question: \n\n {question} \n\n LLM generation: {generation}"),
+    ]
+)
+
+answer_grader = answer_prompt | structured_llm_grader
+# answer_grader.invoke({"question": question, "generation": generation})
+
+### Question Re-writer
 # LLM
 llm = ChatOpenAI(model="gpt-3.5-turbo-0125", temperature=0)
 
 # Prompt
 system = """You a question re-writer that converts an input question to a better version that is optimized \n 
-     for web search. Look at the input and try to reason about the underlying semantic intent / meaning."""
+     for vectorstore retrieval. Look at the input and try to reason about the underlying semantic intent / meaning."""
 re_write_prompt = ChatPromptTemplate.from_messages(
     [
         ("system", system),
@@ -166,17 +189,13 @@ re_write_prompt = ChatPromptTemplate.from_messages(
 )
 
 question_rewriter = re_write_prompt | llm | StrOutputParser()
-# ret = question_rewriter.invoke({"question": question})
-# print(ret)
+# question_rewriter.invoke({"question": question})
 
-### Search
-from langchain_community.tools.tavily_search import TavilySearchResults
 
-web_search_tool = TavilySearchResults(k=3)
-
-## Graph
+#Graph
 from typing import List
 from typing_extensions import TypedDict
+
 
 class GraphState(TypedDict):
     """
@@ -185,33 +204,12 @@ class GraphState(TypedDict):
     Attributes:
         question: question
         generation: LLM generation
-        web_search: whether to add search
         documents: list of documents
     """
 
     question: str
     generation: str
-    web_search: str
     documents: List[str]
-
-
-from langchain.schema import Document
-
-def chatbot(state):
-    """
-    Chatbot
-
-    Args:
-        state (dict): The current graph state
-
-    Returns:
-        state (dict): New key added to state, generation, that contains LLM generation
-    """
-    print("---CHATBOT---")
-    question = state["question"]
-    response = chat_grader.invoke({"question": question})
-    print(response)
-    return {"generation": response.answer, "question": question}
 
 def retrieve(state):
     """
@@ -267,7 +265,6 @@ def grade_documents(state):
 
     # Score each doc
     filtered_docs = []
-    web_search = "No"
     for d in documents:
         score = retrieval_grader.invoke(
             {"question": question, "document": d.page_content}
@@ -278,9 +275,8 @@ def grade_documents(state):
             filtered_docs.append(d)
         else:
             print("---GRADE: DOCUMENT NOT RELEVANT---")
-            web_search = "Yes"
             continue
-    return {"documents": filtered_docs, "question": question, "web_search": web_search}
+    return {"documents": filtered_docs, "question": question}
 
 
 def transform_query(state):
@@ -300,34 +296,13 @@ def transform_query(state):
 
     # Re-write question
     better_question = question_rewriter.invoke({"question": question})
+    print("---NEW QUESTION: ", better_question, "---")
     return {"documents": documents, "question": better_question}
 
 
-def web_search(state):
-    """
-    Web search based on the re-phrased question.
-
-    Args:
-        state (dict): The current graph state
-
-    Returns:
-        state (dict): Updates documents key with appended web results
-    """
-
-    print("---WEB SEARCH---")
-    question = state["question"]
-    documents = state["documents"]
-
-    # Web search
-    docs = web_search_tool.invoke({"query": question})
-    web_results = "\n".join([d["content"] for d in docs])
-    web_results = Document(page_content=web_results)
-    documents.append(web_results)
-
-    return {"documents": documents, "question": question}
-
-
 ### Edges
+
+
 def decide_to_generate(state):
     """
     Determines whether to generate an answer, or re-generate a question.
@@ -341,10 +316,9 @@ def decide_to_generate(state):
 
     print("---ASSESS GRADED DOCUMENTS---")
     state["question"]
-    web_search = state["web_search"]
-    state["documents"]
+    filtered_documents = state["documents"]
 
-    if web_search == "Yes":
+    if not filtered_documents:
         # All documents have been filtered check_relevance
         # We will re-generate a new query
         print(
@@ -355,39 +329,59 @@ def decide_to_generate(state):
         # We have relevant documents, so generate answer
         print("---DECISION: GENERATE---")
         return "generate"
+
+
+def grade_generation_v_documents_and_question(state):
+    """
+    Determines whether the generation is grounded in the document and answers question.
+
+    Args:
+        state (dict): The current graph state
+
+    Returns:
+        str: Decision for next node to call
+    """
+
+    print("---CHECK HALLUCINATIONS---")
+    question = state["question"]
+    documents = state["documents"]
+    generation = state["generation"]
+
+    score = hallucination_grader.invoke(
+        {"documents": documents, "generation": generation}
+    )
+    grade = score.binary_score
+
+    # Check hallucination
+    if grade == "yes":
+        print("---DECISION: GENERATION IS GROUNDED IN DOCUMENTS---")
+        # Check question-answering
+        print("---GRADE GENERATION vs QUESTION---")
+        score = answer_grader.invoke({"question": question, "generation": generation})
+        grade = score.binary_score
+        if grade == "yes":
+            print("---DECISION: GENERATION ADDRESSES QUESTION---")
+            return "useful"
+        else:
+            print("---DECISION: GENERATION DOES NOT ADDRESS QUESTION---")
+            return "not useful"
+    else:
+        print("---DECISION: GENERATION IS NOT GROUNDED IN DOCUMENTS, RE-TRY---")
+        return "not supported"
     
-
-## Build Graph
+# Build Graph
 from langgraph.graph import END, StateGraph
-from typing import Literal
-
-def should_continue(state) -> Literal["retrieve", "__end__"]:
-    """Return the next node to execute."""
-    print(state)
-    result = state["generation"]
-    # If there is no function call, then we finish
-    if len(result) > 0:
-        return "__end__"
-    # Otherwise if there is, we continue
-    return "retrieve"
 
 workflow = StateGraph(GraphState)
 
 # Define the nodes
-workflow.add_node("chatbot", chatbot)  # chatbot
 workflow.add_node("retrieve", retrieve)  # retrieve
 workflow.add_node("grade_documents", grade_documents)  # grade documents
 workflow.add_node("generate", generate)  # generatae
 workflow.add_node("transform_query", transform_query)  # transform_query
-workflow.add_node("web_search_node", web_search)  # web search
 
 # Build graph
-# workflow.set_entry_point("retrieve")
-workflow.set_entry_point("chatbot")
-workflow.add_conditional_edges(
-    "chatbot",
-    should_continue,
-)
+workflow.set_entry_point("retrieve")
 workflow.add_edge("retrieve", "grade_documents")
 workflow.add_conditional_edges(
     "grade_documents",
@@ -397,32 +391,26 @@ workflow.add_conditional_edges(
         "generate": "generate",
     },
 )
-workflow.add_edge("transform_query", "web_search_node")
-workflow.add_edge("web_search_node", "generate")
-workflow.add_edge("generate", END)
+workflow.add_edge("transform_query", "retrieve")
+workflow.add_conditional_edges(
+    "generate",
+    grade_generation_v_documents_and_question,
+    {
+        "not supported": "generate",
+        "useful": END,
+        "not useful": "transform_query",
+    },
+)
 
 # Compile
 app = workflow.compile()
 
+
 from pprint import pprint
 
 # Run
-# bellow will read documents
-# inputs = {"question": "Apa itu Post Traumatic Stress Disorder (PTSD)?"}
-# for output in app.stream(inputs, {"recursion_limit": 20}):
-#     for key, value in output.items():
-#         # Node
-#         pprint(f"Node '{key}':")
-#         # Optional: print full state at each node
-#         # pprint.pprint(value["keys"], indent=2, width=80, depth=None)
-#     pprint("\n---\n")
-
-# # Final generation
-# pprint(value["generation"])
-
-# # bellow will do some web search
-inputs = {"question": "How does the magnetic encoder work?"}
-for output in app.stream(inputs, {"recursion_limit": 20}):
+inputs = {"question": "metamfetamin"}
+for output in app.stream(inputs, {"recursion_limit": 6}):
     for key, value in output.items():
         # Node
         pprint(f"Node '{key}':")
@@ -432,16 +420,3 @@ for output in app.stream(inputs, {"recursion_limit": 20}):
 
 # Final generation
 pprint(value["generation"])
-
-# bellow will respons with friendly answer
-# inputs = {"question": "halo, saya Roy"}
-# for output in app.stream(inputs, {"recursion_limit": 20}):
-#     for key, value in output.items():
-#         # Node
-#         pprint(f"Node '{key}':")
-#         # Optional: print full state at each node
-#         # pprint.pprint(value["keys"], indent=2, width=80, depth=None)
-#     pprint("\n---\n")
-
-# # Final generation
-# pprint(value["generation"])
